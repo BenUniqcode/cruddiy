@@ -64,7 +64,7 @@ function column_type($columnname){
 function generate_error(){
     global $errorfile;
     if (!file_put_contents("app/error.php", $errorfile, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create error file!");
     }
     echo "Generating Error file<br>";
 }
@@ -134,7 +134,7 @@ function append_links_to_startpage($startfile, $start_page, $startpage_filename,
                     $button_string = "\t".'<a href="'.$start_page_link.'" class="btn btn-primary" role="button">'.$td.'</a>'."\n\t".$buttons_delimiter;
                     $step0 = str_replace($buttons_delimiter, $button_string, $startfile);
                     if (!file_put_contents($startpage_filename, $step0, LOCK_EX)) {
-                        die("Unable to open file!");
+                        die("Unable to create startpage file!");
                     }
                 }
                 array_push($generate_start_checked_links, $start_page_link);
@@ -157,7 +157,7 @@ function generate_index($tablename,$tabledisplay,$index_table_headers,$index_tab
     $step7 = str_replace("{COLUMNS}", $columns_available, $step6 );
     $step8 = str_replace("{INDEX_CONCAT_SEARCH_FIELDS}", $index_sql_search, $step7 );
     if (!file_put_contents("app/".$tablename."-index.php", $step8, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create $tablename index file!");
     }
     echo "Generating $tablename Index file<br>";
 }
@@ -168,7 +168,7 @@ function generate_read($tablename, $column_id, $read_records){
     $step1 = str_replace("{TABLE_ID}", $column_id, $step0);
     $step2 = str_replace("{RECORDS_READ_FORM}", $read_records, $step1 );
     if (!file_put_contents("app/".$tablename."-read.php", $step2, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create $tablename read file!");
     }
     echo "Generating $tablename Read file<br>";
 }
@@ -178,7 +178,7 @@ function generate_delete($tablename, $column_id){
     $step0 = str_replace("{TABLE_NAME}", $tablename, $deletefile);
     $step1 = str_replace("{TABLE_ID}", $column_id, $step0);
     if (!file_put_contents("app/".$tablename."-delete.php", $step1, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create $tablename delete file!");
     }
     echo "Generating $tablename Delete file<br><br>";
 }
@@ -194,7 +194,7 @@ function generate_create($tablename,$create_records, $create_err_records, $creat
     $step6 = str_replace("{CREATE_HTML}", $create_html, $step5);
     $step7 = str_replace("{CREATE_POST_VARIABLES}", $create_postvars, $step6);
     if (!file_put_contents("app/".$tablename."-create.php", $step7, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create $tablename create file!");
     }
     echo "Generating $tablename Create file<br>";
 }
@@ -212,7 +212,7 @@ function generate_update($tablename, $create_records, $create_err_records, $crea
     $step8 = str_replace("{UPDATE_COLUMN_ROWS}", $update_column_rows, $step7);
     $step9 = str_replace("{UPDATE_SQL_COLUMNS}", $update_sql_columns, $step8);
     if (!file_put_contents("app/".$tablename."-update.php", $step9, LOCK_EX)) {
-        die("Unable to open file!");
+        die("Unable to create $tablename update file!");
     }
     echo "Generating $tablename Update file<br>";
 }
