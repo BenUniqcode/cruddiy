@@ -1,6 +1,7 @@
 <?php
 
-function get_existing_relations($link) {
+function get_existing_relations() {
+    global $link;
     $sql = "SELECT i.TABLE_NAME as 'Table Name', k.COLUMN_NAME as 'Foreign Key', 
             k.REFERENCED_TABLE_NAME as 'Primary Table', k.REFERENCED_COLUMN_NAME as 'Primary Key',
             i.CONSTRAINT_NAME as 'Constraint Name' 
@@ -94,22 +95,29 @@ if(isset($_POST['submit'])){
 }
 
 if(isset($_POST['addkey'])){
-    $primary = $_POST['primary'];  
-    $fk = $_POST['fk'];
+    $from_table = $_POST['from_table'];
+    $from_column = $_POST['from_column'];
+    $to_table = $_POST['to_table'];
+    $to_column = $_POST['to_column'];
+    if (empty($from_table) || empty($from_column) || empty($to_table) || empty($to_column)) {
+        echo "Error: Please ensure both source and destination tables and columns are selected";   
+    } else {
+        add_foreign_key($from_table, $from_column, $to_table, $to_column);
+    }
+}
 
-    $split_primary=explode('|', $primary);
-    $split_fk=explode('|', $fk);
-
+function add_foreign_key($from_table, $from_column, $to_table, $to_column) {
+    global $link;
     // Get existing relations to check for duplicate foreign key names
-    $relations = get_existing_relations($link);
+    $relations = get_existing_relations();
     $existing_constraint_names = [];
     foreach ($relations as $r) {
 	    $existing_constraint_names[ $r[ 'Constraint Name' ] ] = true;
     }
 
-    // The default constraint name is [sourcetable]_fk_[primarytable]_1
+    // The default constraint name is [fromtable]_fk_[totable]_1
     // If that already exists, increment the number until it doesn't
-    $fk_name = $split_fk[0].'_fk_' . $split_primary[0];
+    $fk_name = $from_table . '_fk_' . $to_table;
     $fk_num = 1;
     while (isset($existing_constraint_names[$fk_name . '_' . $fk_num])) {
         $fk_num++;
@@ -147,12 +155,11 @@ if(isset($_POST['addkey'])){
             $onupd = "";
     }
 
-    $sql = "ALTER TABLE $split_fk[0] ADD FOREIGN KEY $fk_name ($split_fk[1]) REFERENCES $split_primary[0]($split_primary[1]) $ondel $onupd;";
-
+    $sql = "ALTER TABLE $from_table ADD FOREIGN KEY $fk_name ($from_column) REFERENCES $to_table($to_column) $ondel $onupd";
     if ($result = mysqli_query($link, $sql)) {
-        echo "The foreign_key '$fk_name' was created from ' $split_fk[0]($split_fk[1])' to '$split_primary[0]($split_primary[1])'.";
+        echo "The foreign_key '$fk_name' was created from $from_table($from_column) to $to_table)($to_column)";
     } else {
-         echo("Something went wrong. Error description: " . mysqli_error($link));
+        echo("Something went wrong. Error description: " . mysqli_error($link));
     }
 }
 
@@ -173,7 +180,7 @@ if(isset($_POST['addkey'])){
                 <div class="text-center">
                     <h4 class="mb-0">Existing Table Relations</h4><br>
                     <?php
-                    $relations = get_existing_relations($link);
+                    $relations = get_existing_relations();
                     if (! empty($relations)) {
                         ?>
                         <table class="table table-bordered">
@@ -218,42 +225,66 @@ if(isset($_POST['addkey'])){
                 <div class="text-center">
                     <h4 class="mt-4 mb-2">Add New Table Relation</h4>
                     <form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+                        <?php
+		        $sql = "select TABLE_NAME from information_schema.TABLES where TABLE_SCHEMA = '$db_name' order by TABLE_NAME";
+                        $result = mysqli_query($link,$sql);
+                        $tables = [];
+                        while (( $row = mysqli_fetch_array($result) )) {
+                            $tables[] = $row[0];
+                        }
+                        ?>
                         <fieldset>
-                            <?php
-                            $sql = "select TABLE_NAME as TableName, COLUMN_NAME as ColumnName from information_schema.columns where table_schema = '$db_name' order by TableName";
-                            $result = mysqli_query($link,$sql);
-                            echo "<label for='fk'>This column:</label>";
-                            echo "<select name='fk' id='fk' style='max-width:20%;'><br>";
-                            while ($column = mysqli_fetch_array($result)) {
-                                echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
+			    <legend>Foreign key (e.g. employee.company_id)</legend>
+                            <label for='from_table'>Table</label>
+                            <select name='from_table' id='from_table'>
+                                <option value="">-- select table --</option>
+                            <?php 
+                            foreach ($tables as $table) {
+                                echo '<option value="' . $table . '">' . $table . '</option>';
                             }
-                            echo "</select>\n";
-   
-                            mysqli_free_result($result);
-                            $result = mysqli_query($link,$sql);
-                            echo "<label for='primary'>has a foreign key relation to:</label>";
-                            echo "<select name='primary' id='primary' style='max-width:20%'>";
-                            while ($column = mysqli_fetch_array($result)) {
-                                echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
-                            }
-                            echo "</select>\n";
-                            ?>
-                            <select name='ondelete' id='ondelete' style='max-width:15%'>";
-                                <option name="ondelete_action" value="">Pick action</option>
-                                <option name="ondelete_cascade" value="cascade">On Delete: Cascade</option>
-                                <option name="ondelete_setnull" value="setnull">On Delete: Set Null</option>
-                                <option name="ondelete_restrict" value="restrict">On Delete: Restrict</option>
+			    ?>
                             </select>
-
-                            <select name='onupdate' id='onupdate' style='max-width:15%'>";
-                                <option name="onupdate_action" value="">Pick action</option>
-                                <option name="onupdate_cascade" value="cascade">On Update: Cascade</option>
-                                <option name="onupdate_setnull" value="setnull">On Update: Set Null</option>
-                                <option name="onupdate_restrict" value="restrict">On Update: Restrict</option>
-                           </select>
-                           <label class="col-form-label mt-3" for="singlebutton"></label>
-                           <button type="submit" id="singlebutton" name="addkey" class="btn btn-primary">Create relation</button>
-                       </fieldset>
+                            <label for='from_column'>Column</label>
+                            <select name='from_column' id='from_column'>
+			        <option>&lt;-- select table</option><?php /* Real values will be added by AJAX */ ?>
+                            </select>
+			</fieldset>
+                        <fieldset>
+			    <legend>is related to (e.g. company.id)</legend>
+                            <label for='to_table'>Table</label>
+                            <select name='to_table' id='to_table'>
+                                <option value="">-- select table --</option>
+                            <?php 
+                            foreach ($tables as $table) {
+                                echo '<option value="' . $table . '">' . $table . '</option>';
+                            }
+			    ?>
+                            </select>
+                            <label for='to_column'>Column</label>
+                            <select name='to_column' id='to_column'>
+			        <option>&lt;-- select table</option><?php /* Real values will be added by AJAX */ ?>
+                            </select>
+			</fieldset>
+   
+                        <fieldset>
+			    <legend>Update and Delete handling (optional)</legend>
+                            <label for="onupdate">On Update</label>
+                            <select name='onupdate' id='onupdate'>";
+                                <option value="">Choose action (optional)</option>
+                                <option value="restrict">On Update: Restrict</option>
+                                <option value="cascade">On Update: Cascade</option>
+                                <option value="setnull">On Update: Set Null</option>
+                            </select>
+                            <br>
+                            <label for="ondelete">On Delete</label>
+                            <select name='ondelete' id='ondelete'>";
+                                <option value="">Choose action (optional)</option>
+                                <option value="restrict">On Delete: Restrict</option>
+                                <option value="cascade">On Delete: Cascade</option>
+                                <option value="setnull">On Delete: Set Null</option>
+                            </select>
+                        </fieldset>
+                        <button type="submit" id="singlebutton" name="addkey" class="btn btn-primary">Create relation</button>
                     </form>
                 </div>
             </div<>
@@ -278,6 +309,40 @@ if(isset($_POST['addkey'])){
 <script src="https://code.jquery.com/jquery-3.5.1.min.js" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+
+<script type="text/javascript">
+    (function($) {
+        $(document).ready(function() {
+            let get_columns = function(tablename, $select_to_populate ) {
+	        $.ajax({
+                    'url': 'ajax_columns.php',
+	            'data': {
+		        'table': tablename,
+                    },
+                    'method': 'get',
+		    'success': function(data) {
+			    // Remove any existing options
+			    $select_to_populate.html('');
+			    for (let i = 0; i < data.length; i++) {
+				let $opt = $('<option/>').appendTo($select_to_populate);
+				$opt.attr('value', data[i]);
+				$opt.html(data[i]);
+			    }
+		    },
+                });
+            };
+	    $('#from_table').change(function() {
+		    let tablename = $(this).val();
+		    get_columns(tablename, $('#from_column'));
+            });
+	    $('#to_table').change(function() {
+		    let tablename = $(this).val();
+		    get_columns(tablename, $('#to_column'));
+	    });
+        });
+    })(jQuery);
+</script>
+
 </body>
 </html>
 
