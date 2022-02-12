@@ -1,5 +1,22 @@
 <?php
 
+function get_existing_relations($link) {
+    $sql = "SELECT i.TABLE_NAME as 'Table Name', k.COLUMN_NAME as 'Foreign Key', 
+            k.REFERENCED_TABLE_NAME as 'Primary Table', k.REFERENCED_COLUMN_NAME as 'Primary Key',
+            i.CONSTRAINT_NAME as 'Constraint Name' 
+            FROM information_schema.TABLE_CONSTRAINTS i
+            LEFT JOIN information_schema.KEY_COLUMN_USAGE k ON i.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+            WHERE i.CONSTRAINT_TYPE = 'FOREIGN KEY' AND i.TABLE_SCHEMA = DATABASE()";
+    $relations = [];
+    $result = mysqli_query($link, $sql);
+    if ($result && $result->num_rows > 0) {
+	while ($row = mysqli_fetch_assoc($result)) {
+            $relations[] = $row;
+	}
+    }
+    return $relations;
+}
+
 if(isset($_POST['index'])) {
     
     if((isset($_POST['server'])) && $_POST['server'] <> '') {
@@ -12,13 +29,13 @@ if(isset($_POST['index'])) {
 	if(isset($_POST['database'])) $database=trim($_POST['database']);
 	if(isset($_POST['numrecordsperpage'])) $numrecordsperpage=$_POST['numrecordsperpage'];
 
-	/* Attempt to connect to MySQL database */
+	// Attempt to connect to MySQL database 
 	$link = mysqli_connect($server, $username, $password, $database);
 	// Check connection
 	if($link === false)
 		die("ERROR: Could not connect. " . mysqli_connect_error());
 
-	/* Clean up User inputs against SQL injection */
+	// Clean up User inputs against SQL injection 
 	foreach($_POST as $k => $v) {
 		$_POST[$k] = mysqli_real_escape_string($link, $v);
 	}
@@ -83,7 +100,21 @@ if(isset($_POST['addkey'])){
     $split_primary=explode('|', $primary);
     $split_fk=explode('|', $fk);
 
-    $fk_name = $split_fk[0].'_ibfk_1';
+    // Get existing relations to check for duplicate foreign key names
+    $relations = get_existing_relations($link);
+    $existing_constraint_names = [];
+    foreach ($relations as $r) {
+	    $existing_constraint_names[ $r[ 'Constraint Name' ] ] = true;
+    }
+
+    // The default constraint name is [sourcetable]_fk_[primarytable]_1
+    // If that already exists, increment the number until it doesn't
+    $fk_name = $split_fk[0].'_fk_' . $split_primary[0];
+    $fk_num = 1;
+    while (isset($existing_constraint_names[$fk_name . '_' . $fk_num])) {
+        $fk_num++;
+    }
+    $fk_name .= '_' . $fk_num;
 
     $ondel_val = $_POST['ondelete'];
     $onupd_val = $_POST['onupdate'];
@@ -141,98 +172,107 @@ if(isset($_POST['addkey'])){
             <div class="col-md-12 mx-auto">
                 <div class="text-center">
                     <h4 class="mb-0">Existing Table Relations</h4><br>
-                    <fieldset>
+                    <?php
+                    $relations = get_existing_relations($link);
+                    if (! empty($relations)) {
+                        ?>
                         <table class="table table-bordered">
-                          <thead>
-                            <tr>
-                              <?php
-                                $sql = "SELECT i.TABLE_NAME as 'Table Name', k.COLUMN_NAME as 'Foreign Key', 
-                                    k.REFERENCED_TABLE_NAME as 'Primary Table', k.REFERENCED_COLUMN_NAME as 'Primary Key',
-                                    i.CONSTRAINT_NAME as 'Constraint Name', 'Delete' as 'Delete' 
-                                        FROM information_schema.TABLE_CONSTRAINTS i
-                                        LEFT JOIN information_schema.KEY_COLUMN_USAGE k ON i.CONSTRAINT_NAME = k.CONSTRAINT_NAME
-                                        WHERE i.CONSTRAINT_TYPE = 'FOREIGN KEY' AND i.TABLE_SCHEMA = DATABASE()";
-                                if (($result = mysqli_query($link, $sql)) && $result->num_rows > 0) {
-                                    $row = mysqli_fetch_assoc($result);
-                                    foreach ($row as $col => $value) {
+                            <thead>
+                                <tr>
+                                    <?php
+                                    foreach ($relations[0] as $col => $value) {
                                         echo "<th>";
                                         echo $col;
                                         echo "</th>"; 
-									}
-									echo "</thead><tbody>";
-									mysqli_data_seek($result, 0);
-									while($row = mysqli_fetch_array($result))
-									{
-										echo "<tr>";
-										echo "<td>" . $row['Table Name'] . "</td>";
-										echo "<td>" . $row['Foreign Key'] . "</td>";
-										echo "<td>" . $row['Primary Table'] . "</td>";
-										echo "<td>" . $row['Primary Key'] . "</td>";
-										echo "<td>" . $row['Constraint Name'] . "</td>";
-										echo "<td class='fk-delete'>";
-										?><form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
-										<?php
-												echo '<input type="hidden" name="tablename" value="';
-												echo $row['Table Name'] .'">';
-												echo '<input type="hidden" name="fkname" value="';
-												echo $row['Constraint Name'] . '">';
-												echo "<button type='submit' id='singlebutton' name='submit' class='btn btn-danger'>Delete</button>"; 
-												echo "</form></td>";
-												echo "</tr>";
-									}
-								} else echo "</thead><tbody><tr><td>No relations found</td></tr>";
-                            ?>
-                                </tbody>
-                                </table> 
+                                    }
+				    echo "<th>Delete</th>";
+                                    ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                foreach ($relations as $row) {
+                                    echo "<tr>";
+                                    foreach ($row as $col => $value) {
+                                        echo "<td>" . $value . "</td>";
+                                    }
+                                    echo "<td class='fk-delete'>";
+                                    echo '<form method="post" action="' . htmlspecialchars($_SERVER['PHP_SELF']) . '">';
+                                    echo '<input type="hidden" name="tablename" value="';
+                                    echo htmlspecialchars($row['Table Name']) .'">';
+                                    echo '<input type="hidden" name="fkname" value="';
+                                    echo htmlspecialchars($row['Constraint Name']) . '">';
+                                    echo "<button type='submit' id='singlebutton' name='submit' class='btn btn-danger'>Delete</button>"; 
+                                    echo "</form></td>";
+                                    echo "</tr>";
+                                }
+                                ?>
+                            </tbody>
+                        </table> 
+                        <?php
+			} else {
+                            echo "</thead><tbody><tr><td>No relations found</td></tr>";
+                        }
+                        ?>
+                </div>
                 <div class="text-center">
-                    <h4 class="mb-0">Add New Table Relation</h4><br>
-                      <form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
-<?php
-                        $sql = "select TABLE_NAME as TableName, COLUMN_NAME as ColumnName from information_schema.columns where table_schema = '$db_name'";
-                        $result = mysqli_query($link,$sql);
-                        echo "<label>This column:</label>
-                            <select name='fk' id='fk' style='max-width:20%;'><br>";
-                        while ($column = mysqli_fetch_array($result)) {
-                            echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
-                        }
-                        echo '</select>';
+                    <h4 class="mt-4 mb-2">Add New Table Relation</h4>
+                    <form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+                        <fieldset>
+                            <?php
+                            $sql = "select TABLE_NAME as TableName, COLUMN_NAME as ColumnName from information_schema.columns where table_schema = '$db_name' order by TableName";
+                            $result = mysqli_query($link,$sql);
+                            echo "<label for='fk'>This column:</label>";
+                            echo "<select name='fk' id='fk' style='max-width:20%;'><br>";
+                            while ($column = mysqli_fetch_array($result)) {
+                                echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
+                            }
+                            echo "</select>\n";
+   
+                            mysqli_free_result($result);
+                            $result = mysqli_query($link,$sql);
+                            echo "<label for='primary'>has a foreign key relation to:</label>";
+                            echo "<select name='primary' id='primary' style='max-width:20%'>";
+                            while ($column = mysqli_fetch_array($result)) {
+                                echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
+                            }
+                            echo "</select>\n";
+                            ?>
+                            <select name='ondelete' id='ondelete' style='max-width:15%'>";
+                                <option name="ondelete_action" value="">Pick action</option>
+                                <option name="ondelete_cascade" value="cascade">On Delete: Cascade</option>
+                                <option name="ondelete_setnull" value="setnull">On Delete: Set Null</option>
+                                <option name="ondelete_restrict" value="restrict">On Delete: Restrict</option>
+                            </select>
 
-                        mysqli_free_result($result);
-                        $result = mysqli_query($link,$sql);
-                        echo "<label>has a foreign key relation to:</label>
-                            <select name='primary' id='primary' style='max-width:20%'>";
-                        while ($column = mysqli_fetch_array($result)) {
-                            echo '<option name="'.$column[0]. '|'.$column[1]. '  " value="'.$column[0].'|'.$column[1]. '">'.$column[0].' ('.$column[1].')</option>';
-
-                        }
-                        echo '</select>';
-?>
-                       <select name='ondelete' id='ondelete' style='max-width:15%'>";
-                            <option name="ondelete_action" value="">Pick action</option>
-                            <option name="ondelete_cascade" value="cascade">On Delete: Cascade</option>
-                            <option name="ondelete_setnull" value="setnull">On Delete: Set Null</option>
-                            <option name="ondelete_restrict" value="restrict">On Delete: Restrict</option>
-                       </select>
-
-                       <select name='onupdate' id='onupdate' style='max-width:15%'>";
-                            <option name="onupdate_action" value="">Pick action</option>
-                            <option name="onupdate_cascade" value="cascade">On Update: Cascade</option>
-                            <option name="onupdate_setnull" value="setnull">On Update: Set Null</option>
-                            <option name="onupdate_restrict" value="restrict">On Update: Restrict</option>
-                       </select>
-                                <label class="col-form-label mt-3" for="singlebutton"></label>
-                                <button type="submit" id="singlebutton" name="addkey" class="btn btn-primary">Create relation</button>
-                    </fieldset>
-                </form>
-            </div>
+                            <select name='onupdate' id='onupdate' style='max-width:15%'>";
+                                <option name="onupdate_action" value="">Pick action</option>
+                                <option name="onupdate_cascade" value="cascade">On Update: Cascade</option>
+                                <option name="onupdate_setnull" value="setnull">On Update: Set Null</option>
+                                <option name="onupdate_restrict" value="restrict">On Update: Restrict</option>
+                           </select>
+                           <label class="col-form-label mt-3" for="singlebutton"></label>
+                           <button type="submit" id="singlebutton" name="addkey" class="btn btn-primary">Create relation</button>
+                       </fieldset>
+                    </form>
+                </div>
+            </div<>
         </div>
     </div>
-<hr>
-On this page you can add new or delete existing table relations i.e. foreign keys. Having foreign keys will result in Cruddiy forms with cascading deletes/updates and dropdown fields populated by foreign keys. If it is not clear what you want or need to do here, it is SAFER to skip this step and move to the next step! You can always come back later and regenerate new forms.
-<hr>
-<form method="post" action="tables.php">
-    <button type="submit" id="singlebutton" name="singlebutton" class="btn btn-success">Continue CRUD Creation Process</button>
-</form>     
+    <div class="row">
+        <div class="col-md-12 mx-auto mt-2">
+            <hr>
+            <p>
+	        On this page you can add new or delete existing table relations i.e. foreign keys. Having foreign keys will result in Cruddiy forms with cascading deletes/updates and dropdown fields populated by foreign keys. If it is not clear what you want or need to do here, it is SAFER to skip this step and move to the next step! You can always come back later and regenerate new forms.
+            </p>
+            <hr>
+        </div>
+        <div class="col-md-12 mx-auto mt-2">
+            <form method="post" action="tables.php">
+                <button type="submit" id="singlebutton" name="singlebutton" class="btn btn-success">Continue CRUD Creation Process</button>
+            </form>     
+        </div>
+    </div>
 </section>
 
 <script src="https://code.jquery.com/jquery-3.5.1.min.js" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script>
